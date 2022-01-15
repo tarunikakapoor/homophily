@@ -1,0 +1,129 @@
+---
+title: "homophily_project"
+author: "tarunikakapoor"
+date: "12/11/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(broom)
+library(readr)
+library(lme4)
+library(lmerTest)
+library(dplyr)
+```
+## 1) Research Question
+
+Paper: Liberman, Z., Kinzler, K. D., & Woodward, A. L. (2021). Origins of homophily: Infants expect people with shared preferences to affiliate. Cognition, 212, 104695. https://doi.org/10.1016/j.cognition.2021.104695 (Links to an external site.) 
+
+Data: https://data.mendeley.com/datasets/3vs8h448zk/1
+
+Homophily is the idea that "birds of a feather flock together" -- or rather, human beings who share preferences are more likely to bond together in a social relationship. This paper seeks to explore whether an understanding of homophily develops in the first two years of human life. Specifically, the research question covered by all four studies is -- Does merely seeing two people share the same preferences mean that an infant will expect those people to affiliate? 
+
+## 2) Experimental Conditions
+
+Although the researchers conducted four different studies, all of which were fairly similar in terms of methods, we will focus on recreating the first study as the main study. During the first study, thirty-two infants (ages circa five to six months) were chosen and assigned to two different conditions (either Shared Preferences or Opposite Preferences.) 
+
+The infants then watched a video featuring two actors audibly expressing their opinions about Food A and Food B four times during a familiarization process. Infants assigned to Shared Preferences watched the two actors express the same opinions for both foods (ex: liking Food A and disliking Food B). Infants assigned to Opposite Preferences watched the two actors express differing opinions about the two foods (ex: Actor 1 liked Food A but disliked Food B while Actor 2 disliked Food A but liked Food B).
+
+Following the familiarization process, the infants viewed the test phase, whether actors would either interact by affiliating or disengaging. In affiliating trials, the actors displayed friendly behavior towards each other. In disengaging trials, the actors displayed unfriendly behavior towards each other.
+
+Both trials ended on still screens, and infants' attention to the still screens with looking times was recorded. The looking time ended when infants looked away for two consecutive seconds.
+
+The next three studies were formatted similarly but varied social behaviors (ex: physically proximity, joint attention, etc) between the two actors.
+
+## 3) Data Files
+
+```{r load data}
+homophily_data <- read_csv('ff_data.csv')
+homophily_data
+```
+As you can see, there is a row representing each subject in each study in the original data set. The last six columns in the data set represent the time a child subject spent looking at the acting pair, listed by the pair number and whether they were displaying affiliation or disengagement behavior.
+
+Although the data listed in the data set is thorough, it is still rather inaccessible in terms of reproducing Figure 1 and performing the linear mixed effects model. Thus, the data must be pivoted using the pivot_longer() function. 
+
+Because we need to extract both the trial type ("affiliation" or "disengagement") and the pair number (1, 2, or 3) from the last six column names, we must pivot the data twice, once for the trial type and once for the pair number. 
+
+```{r pivot with trial type}
+homophily_pivot_type <- pivot_longer(homophily_data, cols = contains('pair'), names_to = 'type', names_pattern = '^([a-z]+)', values_to = 'time') 
+homophily_pivot_type
+```
+
+```{r pivot with pair number}
+homophily_pivot_pair <- pivot_longer(homophily_data, cols = contains('pair'), names_to = 'pair', names_pattern = '([0-9])', values_to = 'time') 
+homophily_pivot_pair
+```
+
+Once we have both pivoted tables, we can combine them into one table of pivoted data using an inner join via the merge() function.
+
+```{r inner join}
+homophily_pivot <- merge(homophily_pivot_pair, homophily_pivot_type, by = c('subject', 'sex', 'age', 'first eater', 'first emotion', 'first bowl', 'similar', 'first test', 'study', 'time'))
+homophily_pivot
+```
+Now that we have our complete table of pivoted data, we can go ahead and examine whether the "time" column, which is one of the main variables involved in the figure reproduction and statistical analysis and represents how long the subjects looked at the actors (measured in seconds), is normal. Firstly, we can see that another main variable involved will be the "similar" column, which represents what kind of preferences the actors in the trial the subject viewed had ("yes" = "Shared Preferences" and "no" = "Opposite Preferences.") Then, there is also "pair," which represents which pair of actors the subject watched, and "type," which represents whether the trial the subject watched had the actors affiliating or disengaging.
+
+While checking whether the looking "time" column data is normally distributed, first we must create a linear model and density plot of the data.
+
+```{r looking time distribution}
+lt.lm <- lm(time ~ 1, data = homophily_pivot)
+plot(density(resid(lt.lm)))
+```
+
+This histogram appears to be skewed right; hence, the looking "time" data is not normal and must be normalized through the log() function.
+
+```{r log and normal distribution}
+homophily_pivot$looking_times_log <- log(homophily_pivot$time)
+ltlog.lm <- lm(looking_times_log ~ 1, data = homophily_pivot)
+plot(density(resid(ltlog.lm)))
+```
+
+We can see that the pivoted looking "time" data processed through the log() function appears to have a fairly normal distribution, which means that the data has now been pre-processed and that we can proceed with reproducing our figure and recreating the linear mixed effects model.
+
+## 4) Reproduced Figures
+
+There is only one figure in the paper -- box-and-whisker plots that illustrate looking times to test trials across studies and show the median and interquartile range. Each dot in the plot represents a trial. Overall, the difference in looking times across trial types was significant for all studies except Study 3.
+
+To recreate Figure 2, we need to use the ggplot() function along with the condition facet_wrap and group the data according to its study. Precisely, we need to use the unnormalized looking "time" data as the original figure does. (The "no" and "yes" of "Conditions" on the x-axis represents "Opposing Preferences" and "Shared Preferences.")
+
+```{r figure 2}
+ggplot(homophily_pivot, aes(x = similar, y = time, fill = type)) + geom_boxplot() + 
+  facet_wrap(~study) + labs(x="Similar", y="Looking Time (seconds)") + theme_minimal()
+```
+
+## 5) Supporting Evidence
+
+Overall, Figure 2 supports the fact that the infants' attention via looking time differed across test trials (e.g. affiliating or disengaging.) Specifically, as seen in Study 1, infants in the Shared Preferences condition looked at disengagement trials longer than they looked at affiliation trials. In contrast, infants in the Opposing Preferences condition looked at affiliation trials than they looked at disengagement trials. This is evident in the box-and-whisker plot(s) displayed in Figure 2.
+
+## 6) Statistical Analysis
+
+As we are focusing solely on Study 1 as the main study, upon looking at the Study 1 results, we see that all analyses are conducted using the lme4 and lmerTest packages, which are installed and activated in the beginning of this RMD file.
+
+In addition, as the results section specified, all analyses are conducted on log-transformed looking times, AKA the looking times log column from the data set. To evaluate attention during test trials, we recreate the regression evaluating infants' log-transformed looking times. Our main effects are the test pair, conditions, and test trial type variables, with an interaction between test trial type and conditions. In addition, we include a random effect of subject.
+
+```{r linear mixed model 1}
+study1.lmer <- lmer(looking_times_log ~ pair + similar*type + (1 | subject), data = homophily_pivot)
+summary(study1.lmer)
+```
+
+Although we do not have the exact summary statistics as the original researchers did, we can still see that they are similar and imply the same significance. For example, the replicated beta zero value for the conditions/similar variable is -0.23653, with a p-value around 0.0206, while the original beta zero value is -0.187, with an original p-value of 0.015. Still, both values imply a significant effect of condition, reflecting longer looking times in the Opposing Preferences condition. In addition, the replicated beta zero value for the test trial type variable is -0.34204, with a p-value of less than 0.001, while the original beta zero value is -0.248, with the same p-value. These values also indicate a significant effect of test trial type, reflecting longer looking times to affiliation trials.
+
+Both results are also reflected in the supporting evidence provided by Figure 2.
+
+(Note: While the original researchers did not specify any additional random effects, it is possible that a linear mixed model similar to the one above with a random slope added could replicate the exact values as the original model.)
+
+Now we move on to the secondary model for the differing values (Shared Preferences versus Opposing Preferences) of the conditions variable. Once again, the analysis is conducted on the log-transformed looking times. As dictated in the results section of Study 1, the variables used in the regression are the pair number and test trial type as predictors/main effects. Subject is used as a random effect again. There are no interactions.
+
+```{r linear mixed model conditions}
+study1conditions.lmer <- lmer(looking_times_log ~ pair + type + (1 | subject) , data = homophily_pivot)
+summary(study1conditions.lmer)
+```
+
+Unfortunately, here is where we error. The summary statistics for the linear mixed model we have created do not match up with those from the original paper, with uncertainty why. Nor are there specific statistical values for either conditions values. 
+
+For the Shared Preferences condition, the original beta zero value was 0.158, with a p-value of less than 0.001, revealing a significant main effect of test trial type with a longer looking time for disengagement trials. (The mean looking time for disengagement trials was 7.5 seconds compared to 5.5 seconds for affiliation trials, only for infants with the Shared Preferences condition.) Thus, in the Shared Preferences condition, infants expected the actors to be more likely to affiliate.
+
+For the Opposing Preferences condition, the original beta zero value was -0.248, with a p-value less than 0.001, once again revealing a significant main effect of test trial type with a longer looking time for affiliation trials. (The mean looking time for affiliation trials was 8.5 seconds compared to 4.6 seconds for disengagement trials, only for infants with the Opposing Preferences condition.) Thus, in the Opposing Preferences condition, infants expected the actors to be more likely to disengage.
